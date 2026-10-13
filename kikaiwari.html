@@ -1,0 +1,1966 @@
+<title>機械割カウンター</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Saira+Condensed:wght@500;600;700&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap">
+<style>
+  /* レイアウト: 単一カラム。上=入力カード、中=カウンター風の結果パネル、下=履歴リスト */
+  :root {
+    color-scheme: dark;
+    --bg: #14110d;
+    --bg-2: #1a160f;
+    --surface: #1f1a14;
+    --surface-2: #272017;
+    --line: #382f23;
+    --ink: #f5efe4;
+    --ink-dim: #a39684;
+    --amber: #ffb224;
+    --hot: #ff4d7d;
+    --cool: #5aa2ff;
+    /* データカウンター部は両テーマで黒地のまま（ホールの実機と同じ見え方） */
+    --panel: #0c0a08;
+    --panel-line: #2a2219;
+    --panel-dim: #8c7f6c;
+    --font-display: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif;
+    --font-body: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+    --font-num: "Saira Condensed", "Arial Narrow", sans-serif;
+    --r: 14px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      color-scheme: light;
+      --bg: #f4efe5;
+      --bg-2: #efe8da;
+      --surface: #fffdf8;
+      --surface-2: #f3ecdf;
+      --line: #ddd1bd;
+      --ink: #241e16;
+      --ink-dim: #776b5a;
+      --amber: #a86100;
+      --hot: #d41f58;
+      --cool: #1a63cf;
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f4efe5;
+    --bg-2: #efe8da;
+    --surface: #fffdf8;
+    --surface-2: #f3ecdf;
+    --line: #ddd1bd;
+    --ink: #241e16;
+    --ink-dim: #776b5a;
+    --amber: #a86100;
+    --hot: #d41f58;
+    --cool: #1a63cf;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--ink);
+    background: var(--bg);
+    background-image: linear-gradient(180deg, var(--bg-2), var(--bg) 420px);
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 20px;
+    padding-block: 28px 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ---- ヘッダー ---- */
+  .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .eyebrow {
+    font-family: var(--font-num);
+    font-size: 12px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--amber);
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: clamp(24px, 7vw, 30px);
+    letter-spacing: .01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .lede { margin: 0; color: var(--ink-dim); font-size: 13px; }
+
+  /* ---- 画面タブ ---- */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tab {
+    flex: 1;
+    padding: 10px 6px 11px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--ink-dim);
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 8px 8px 0 0;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] { color: var(--amber); border-bottom-color: var(--amber); }
+  .tab-count {
+    font-family: var(--font-num);
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 4px;
+    opacity: .8;
+  }
+  .view { display: flex; flex-direction: column; gap: 20px; }
+
+  /* ---- モード切替 ---- */
+  .modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 6px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+  }
+  .modes input { position: absolute; opacity: 0; pointer-events: none; }
+  .modes label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 9px 8px;
+    border-radius: 9px;
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--ink-dim);
+    transition: background .18s, color .18s;
+  }
+  .modes label small {
+    font-family: var(--font-num);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: .1em;
+    opacity: .75;
+  }
+  .modes input:checked + label {
+    background: var(--amber);
+    color: #1a1206;
+  }
+  .modes input:focus-visible + label { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  /* ---- 入力カード ---- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    padding: 18px;
+  }
+  .fields { display: flex; flex-direction: column; gap: 14px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 420px) { .row { grid-template-columns: 1fr; } }
+  .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .field > label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--ink-dim);
+  }
+  .field .unit { font-weight: 500; opacity: .8; }
+  input[type="text"], input[type="number"], input[type="date"] {
+    width: 100%;
+    padding: 11px 12px;
+    font-family: var(--font-body);
+    font-size: 16px;
+    color: var(--ink);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input[type="number"], input[type="date"] {
+    font-family: var(--font-num);
+    font-size: 19px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .02em;
+  }
+  input[type="date"] { min-height: 46px; }
+  input:focus-visible {
+    outline: none;
+    border-color: var(--amber);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 28%, transparent);
+  }
+  .hint { font-size: 11px; color: var(--ink-dim); }
+  .note {
+    margin: 0 0 14px;
+    padding: 8px 11px;
+    font-size: 12px;
+    color: var(--ink-dim);
+    background: var(--surface-2);
+    border-left: 3px solid var(--amber);
+    border-radius: 0 8px 8px 0;
+  }
+  .actions { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 16px; }
+  button {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    padding: 13px 14px;
+    border-radius: 11px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: filter .15s, background .15s;
+  }
+  button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-main { background: var(--amber); color: #1a1206; }
+  .btn-main:hover { filter: brightness(1.08); }
+  .btn-sub { background: transparent; color: var(--ink-dim); border-color: var(--line); }
+  .btn-sub:hover { background: var(--surface-2); color: var(--ink); }
+  .error {
+    margin-top: 14px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--hot);
+    background: color-mix(in srgb, var(--hot) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--hot) 40%, transparent);
+    border-radius: 10px;
+  }
+
+  /* ---- 貼り付け取り込み ---- */
+  details.import summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    cursor: pointer;
+    list-style: none;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+  }
+  details.import summary::-webkit-details-marker { display: none; }
+  details.import summary::after { content: "＋"; color: var(--amber); font-size: 15px; }
+  details.import[open] summary::after { content: "−"; }
+  details.import summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 6px; }
+  .sum-hint { font-family: var(--font-body); font-weight: 500; font-size: 11px; color: var(--ink-dim); margin-left: auto; }
+  .import-body { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+  textarea {
+    width: 100%;
+    min-height: 112px;
+    padding: 11px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--ink);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    resize: vertical;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  textarea:focus-visible {
+    outline: none;
+    border-color: var(--amber);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 28%, transparent);
+  }
+  .map-head { font-size: 12px; font-weight: 700; color: var(--ink-dim); }
+  .map { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; margin-top: 6px; }
+  .map label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .map .sample {
+    font-family: var(--font-num);
+    font-size: 12px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .map select {
+    padding: 8px 9px;
+    font-family: var(--font-body);
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .map select:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+  .table-scroll { overflow: auto; max-height: 420px; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; }
+  th, td { padding: 7px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ink-dim);
+    background: var(--surface-2);
+  }
+  td { font-family: var(--font-num); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  td.chk, th.chk { width: 34px; padding-right: 0; text-align: center; }
+  td.chk input { accent-color: var(--amber); width: 16px; height: 16px; }
+  td.name-cell {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  tr.total td { background: var(--surface-2); font-weight: 700; }
+  tr.off td:not(.chk) { opacity: .4; }
+  tr.bad td { color: var(--hot); }
+  td.hot { color: var(--hot); }
+  td.cool { color: var(--cool); }
+
+  /* ---- 末尾別の傾向 ---- */
+  .pick {
+    max-width: 58%;
+    padding: 7px 9px;
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .pick:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+  .tail-total {
+    margin: 12px 0 0;
+    padding: 9px 11px;
+    font-size: 12px;
+    color: var(--ink-dim);
+    background: var(--surface-2);
+    border-radius: 9px;
+  }
+  .tail-total b {
+    font-family: var(--font-num);
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .tail-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .tail-row {
+    display: grid;
+    grid-template-columns: 52px 1fr 66px;
+    align-items: center;
+    gap: 4px 9px;
+  }
+  .tail-row.thin { opacity: .55; }
+  .tail-label {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .tail-bar {
+    position: relative;
+    height: 12px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .tail-fill { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+  .tail-row.plus .tail-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--hot) 45%, transparent), var(--hot)); }
+  .tail-row.minus .tail-fill { background: linear-gradient(90deg, var(--cool), color-mix(in srgb, var(--cool) 45%, transparent)); }
+  .tail-zero { position: absolute; top: -1px; bottom: -1px; left: 50%; width: 1px; background: var(--amber); opacity: .8; }
+  .tail-rate {
+    font-family: var(--font-num);
+    font-size: 16px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .tail-row.plus .tail-rate { color: var(--hot); }
+  .tail-row.minus .tail-rate { color: var(--cool); }
+  .tail-sub {
+    grid-column: 2 / -1;
+    font-family: var(--font-num);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .03em;
+    color: var(--ink-dim);
+  }
+  #tail-import { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  #tail-import summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    list-style: none;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--ink-dim);
+  }
+  #tail-import summary::-webkit-details-marker { display: none; }
+  #tail-import summary::after { content: "＋"; color: var(--amber); }
+  #tail-import[open] summary::after { content: "−"; }
+  #tail-import summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 6px; }
+
+  /* ---- 履歴 ---- */
+  .sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 16px;
+    margin: 0;
+  }
+  .link-btn {
+    background: none;
+    border: 0;
+    padding: 4px 2px;
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: var(--ink-dim);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .link-btn:hover { color: var(--hot); }
+  .count {
+    font-family: var(--font-num);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-dim);
+    margin-left: 6px;
+  }
+  .search { position: relative; margin-top: 10px; }
+  .search svg {
+    position: absolute;
+    left: 11px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 15px;
+    stroke: var(--ink-dim);
+    fill: none;
+    stroke-width: 2;
+    pointer-events: none;
+  }
+  input[type="search"] {
+    width: 100%;
+    padding: 10px 12px 10px 34px;
+    font-family: var(--font-body);
+    font-size: 15px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
+  .search .reset {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    font-size: 15px;
+    line-height: 1;
+    color: var(--ink-dim);
+    background: transparent;
+    border: 0;
+    border-radius: 7px;
+  }
+  .search .reset:hover { color: var(--ink); background: var(--surface-2); }
+  mark {
+    padding: 0 1px;
+    border-radius: 3px;
+    color: var(--ink);
+    background: color-mix(in srgb, var(--amber) 38%, transparent);
+  }
+  .hist { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .hist li {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left-width: 3px;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .hist li.hot { border-left-color: var(--hot); }
+  .hist li.cool { border-left-color: var(--cool); }
+  .hist li.plain { border-left-color: var(--line); }
+  .hist li.plain .hr-name { font-size: 15px; }
+  .hist-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto 12px;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 10px 11px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    text-align: left;
+    font-family: var(--font-body);
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .hist-row:hover { background: var(--surface-2); }
+  .hr-date {
+    font-family: var(--font-num);
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-dim);
+  }
+  .hr-name { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hr-rate {
+    font-family: var(--font-num);
+    font-size: 17px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .hist li.hot .hr-rate { color: var(--hot); }
+  .hist li.cool .hr-rate { color: var(--cool); }
+  .hr-caret { color: var(--ink-dim); font-size: 13px; transition: transform .18s; }
+  .nav-row { grid-template-columns: minmax(0, 1fr) auto 12px; row-gap: 2px; padding: 11px; }
+  .nav-row .hr-name { grid-column: 1; grid-row: 1; }
+  .nav-row .hr-sub {
+    grid-column: 1;
+    grid-row: 2;
+    font-family: var(--font-num);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .03em;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nav-row .hr-rate, .nav-row .hr-caret { grid-row: 1 / 3; align-self: center; }
+  .crumb {
+    width: 100%;
+    margin-top: 10px;
+    padding: 9px 11px;
+    text-align: left;
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--amber);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+  }
+  .crumb:hover { background: var(--surface); }
+  .hist-row[aria-expanded="true"] .hr-caret { transform: rotate(90deg); }
+  .hist-detail {
+    padding: 2px 11px 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+  }
+  .hist .top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--ink-dim); }
+  .hist .hist-date {
+    font-family: var(--font-num);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .tag {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+  }
+  .tag.sma { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+  .tag.jug { color: var(--cool); border-color: color-mix(in srgb, var(--cool) 45%, transparent); }
+  .hist .sub { font-family: var(--font-num); font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink); letter-spacing: .03em; }
+  .del {
+    padding: 6px 10px;
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: var(--ink-dim);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .del:hover { color: var(--hot); border-color: var(--hot); }
+  .actions.one { grid-template-columns: 1fr; }
+  .ctl-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .ctl-row .pick { flex: 1; max-width: none; }
+  .ctl-row .del { flex: none; white-space: nowrap; }
+  .finder { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .finder .search { flex: 1; margin-top: 0; }
+  .finder .pick { max-width: 40%; flex: none; }
+  .more {
+    width: 100%;
+    margin-top: 8px;
+    padding: 11px 14px;
+    font-size: 13px;
+    color: var(--amber);
+    background: transparent;
+    border: 1px dashed color-mix(in srgb, var(--amber) 55%, var(--line));
+  }
+  .more:hover { background: color-mix(in srgb, var(--amber) 10%, transparent); }
+  .empty { color: var(--ink-dim); font-size: 13px; margin: 10px 0 0; }
+  footer { color: var(--ink-dim); font-size: 11px; line-height: 1.8; }
+  footer b { color: var(--ink); font-weight: 700; }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <div>
+      <div class="eyebrow">KIKAIWARI CHECK</div>
+      <h1>機械割カウンター</h1>
+    </div>
+    <p class="lede">スマスロは3枚固定、ジャグラーはボーナス中2枚掛けで分けて計算します。</p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="画面の切替">
+    <button type="button" class="tab" id="tab-calc" role="tab" aria-selected="true" aria-controls="view-calc">計算</button>
+    <button type="button" class="tab" id="tab-tails" role="tab" aria-selected="false" aria-controls="view-tails">末尾別</button>
+    <button type="button" class="tab" id="tab-hist" role="tab" aria-selected="false" aria-controls="view-hist">履歴<span class="tab-count" id="tab-hist-count"></span></button>
+  </nav>
+
+  <div class="view" id="view-calc" role="tabpanel" aria-labelledby="tab-calc">
+  <div class="modes" role="radiogroup" aria-label="計算モード">
+    <input type="radio" id="mode-sma" name="mode" value="sma" checked>
+    <label for="mode-sma">スマスロ<small>3枚固定</small></label>
+    <input type="radio" id="mode-jug" name="mode" value="jug">
+    <label for="mode-jug">ジャグラー<small>BIG14G / REG9G</small></label>
+  </div>
+
+  <form class="card" id="form" novalidate>
+    <p class="note" id="sample-note">サンプル値が入っています。そのまま書き換えて使ってください。</p>
+    <div class="fields">
+      <div class="row">
+        <div class="field">
+          <label for="shop">店舗名</label>
+          <input type="text" id="shop" placeholder="例: ○○会館 本店" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="machine">機種名</label>
+          <input type="text" id="machine" list="machine-list" placeholder="例: マイジャグラーV" autocomplete="off">
+          <datalist id="machine-list"></datalist>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="date">データの日付 <span class="unit">（営業日）</span></label>
+          <input type="date" id="date">
+        </div>
+        <div class="field">
+          <label for="games">総ゲーム数 <span class="unit">（G）</span></label>
+          <input type="number" id="games" inputmode="numeric" min="1" step="1" placeholder="0">
+        </div>
+      </div>
+
+      <div class="row jug-only" hidden>
+        <div class="field">
+          <label for="big">BIG回数</label>
+          <input type="number" id="big" inputmode="numeric" min="0" step="1" placeholder="0">
+        </div>
+        <div class="field">
+          <label for="reg">REG回数</label>
+          <input type="number" id="reg" inputmode="numeric" min="0" step="1" placeholder="0">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="diff">差枚数 <span class="unit">（枚・マイナスは −1200 のように）</span></label>
+        <input type="number" id="diff" inputmode="numeric" step="1" placeholder="0">
+        <span class="hint" id="diff-hint">出玉がプラスなら＋、負けていれば − を付けて入力</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="btn-main">計算する</button>
+      <button type="button" class="btn-sub" id="clear">クリア</button>
+    </div>
+    <p class="error" id="error" role="alert" hidden></p>
+  </form>
+
+  <details class="card import" id="import">
+    <summary>データを貼り付けて取り込む<span class="sum-hint">コピペで一括入力</span></summary>
+    <div class="import-body">
+      <p class="hint">スロレポなどのサイトで台データの表をブラウザ上で選択してコピーし、そのまま貼り付けてください。列の対応は自動で推測します（下のメニューで直せます）。</p>
+      <div class="row">
+        <div class="field">
+          <label for="import-shop">店舗名 <span class="unit">（取り込む全行に付きます）</span></label>
+          <input type="text" id="import-shop" placeholder="例: エスパス高田馬場" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="import-date">データの日付 <span class="unit">（営業日）</span></label>
+          <input type="date" id="import-date">
+        </div>
+      </div>
+      <p class="hint">機種名は表の列から取り込みます（列になければ上のフォームの機種名を使います）。この2つは上のフォームと連動します。</p>
+      <textarea id="paste" aria-label="台データの貼り付け" placeholder="台番号	G数	BB	RB	差枚
+1021	5200	28	21	+1860
+1022	3980	14	12	-860"></textarea>
+      <div class="actions">
+        <button type="button" class="btn-main" id="parse">読み取る</button>
+        <button type="button" class="btn-sub" id="paste-clear">消す</button>
+      </div>
+      <p class="error" id="parse-error" role="alert" hidden></p>
+      <div id="map-wrap" hidden>
+        <div class="map-head">列の対応</div>
+        <div class="map" id="map"></div>
+      </div>
+      <div id="preview-wrap" hidden>
+        <div class="table-scroll"><table id="preview"></table></div>
+        <p class="hint" id="preview-note"></p>
+        <div class="actions">
+          <button type="button" class="btn-main" id="apply-total">合計をフォームに入れる</button>
+          <button type="button" class="btn-sub" id="add-rows">各台を履歴に追加</button>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  </div>
+
+  <div class="view" id="view-tails" role="tabpanel" aria-labelledby="tab-tails" hidden>
+  <section class="card">
+    <div class="sec-head">
+      <h2>末尾別の傾向<span class="count" id="tail-count"></span></h2>
+      <button type="button" class="link-btn" id="tail-clear">すべて消す</button>
+    </div>
+    <div class="ctl-row" id="tail-ctl">
+      <select id="tail-pick" class="pick" aria-label="表示する店舗と日付"></select>
+      <button type="button" class="del" id="tail-del">表示中を削除</button>
+    </div>
+    <p class="tail-total" id="tail-total" hidden></p>
+    <ul class="tail-list" id="tail-list"></ul>
+    <p class="empty" id="tail-empty" hidden>スロレポの「末尾別結果」を貼り付けると、末尾ごとの平均差枚が並びます。</p>
+    <p class="hint" id="tail-note" hidden></p>
+    <details id="tail-import">
+      <summary>末尾別結果を貼り付ける<span class="sum-hint" id="tail-target"></span></summary>
+      <div class="import-body">
+        <p class="hint">「末尾別結果」の表をコピーして貼り付けてください。ページ全体を貼っても末尾の行だけ拾います。</p>
+        <div class="row">
+          <div class="field">
+            <label for="tail-shop">店舗名</label>
+            <input type="text" id="tail-shop" placeholder="例: エスパス高田馬場" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="tail-date">データの日付 <span class="unit">（営業日）</span></label>
+            <input type="date" id="tail-date">
+          </div>
+        </div>
+        <textarea id="tail-paste" aria-label="末尾別結果の貼り付け" placeholder="末尾番号	平均差枚	平均G数	勝率
+末尾0	-39	4,331	15/34
+末尾1	-883	3,665	9/35"></textarea>
+        <div class="actions one">
+          <button type="button" class="btn-main" id="tail-read">読み取って保存</button>
+        </div>
+        <button type="button" class="more" id="tail-rename">表示中の店舗名・日付を上の内容に直す</button>
+        <p class="error" id="tail-error" role="alert" hidden></p>
+        <p class="note" id="tail-msg" hidden></p>
+      </div>
+    </details>
+  </section>
+  </div>
+
+  <div class="view" id="view-hist" role="tabpanel" aria-labelledby="tab-hist" hidden>
+  <section>
+    <div class="sec-head">
+      <h2>計算履歴<span class="count" id="hist-count"></span></h2>
+      <button type="button" class="link-btn" id="clear-hist">すべて消す</button>
+    </div>
+    <div class="finder">
+    <div class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><line x1="16" y1="16" x2="21" y2="21"></line></svg>
+      <input type="search" id="q" placeholder="例: エスパス高田馬場 彼女、お借りします" autocomplete="off" aria-label="履歴を店舗名・機種名で検索（スペース区切りで両方指定できます）">
+      <button type="button" class="reset" id="q-reset" aria-label="検索を解除" hidden>×</button>
+    </div>
+    <select id="sort" class="pick" aria-label="履歴の並び順">
+      <option value="new">新しい順</option>
+      <option value="rate-desc">機械割の高い順</option>
+      <option value="rate-asc">機械割の低い順</option>
+      <option value="diff-desc">差枚の多い順</option>
+    </select>
+    </div>
+    <button type="button" class="crumb" id="hist-back" hidden></button>
+    <ul class="hist" id="hist"></ul>
+    <button type="button" class="more" id="hist-more" hidden></button>
+    <p class="empty" id="hist-empty" hidden>まだ履歴がありません。計算すると自動で残ります。</p>
+    <p class="empty" id="hist-nomatch" hidden></p>
+  </section>
+  </div>
+
+  <footer>
+    <b>計算の前提</b><br>
+    スマスロ: 総投入 = 総G数 × 3 ／ 総払い出し = 総投入 + 差枚数<br>
+    ジャグラー: ボーナス中G数 = BIG×14 + REG×9（2枚掛け）、通常時G数 = 総G数 − ボーナス中G数、総投入 = 通常時G×3 + ボーナス中G×2<br>
+    BIG14G・REG9Gは平均消化G数の標準値です。履歴はこの端末のブラウザにのみ保存されます。
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var MACHINES = {
+    sma: ["スマスロ北斗の拳", "スマスロ モンキーターンV", "L ゴジラ対エヴァンゲリオン", "スマスロ ゴールデンカムイ", "L からくりサーカス", "スマスロ 戦国乙女4", "L ドラゴンハーレム", "スマスロ ヴァルヴレイヴ"],
+    jug: ["アイムジャグラーEX", "マイジャグラーV", "ファンキージャグラー2", "ハッピージャグラーVIII", "ゴーゴージャグラー3", "ミスタージャグラー", "ジャグラーガールズSS"]
+  };
+  var BIG_G = 14, REG_G = 9;
+  var HKEY = "kikaiwari.history.v1";
+  var SKEY = "kikaiwari.shop.v1";
+  var DKEY = "kikaiwari.draft.v1";   // 入力途中の内容（開き直しても消えないように）
+
+  var $ = function (id) { return document.getElementById(id); };
+  var form = $("form");
+  var fShop = $("shop"), fMachine = $("machine"), fDate = $("date"), fGames = $("games"),
+      fBig = $("big"), fReg = $("reg"), fDiff = $("diff");
+  var errorBox = $("error"), note = $("sample-note"), list = $("hist"), listEmpty = $("hist-empty");
+  var searchBox = document.querySelector(".finder"), noMatch = $("hist-nomatch");
+  var jugOnly = document.querySelectorAll(".jug-only");
+  var pristine = true;
+
+  /* ---------- 保存 ---------- */
+  function load(key, fallback) {
+    try {
+      var raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) { return fallback; }
+  }
+  function save(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* 保存できない環境では履歴なしで動かす */ }
+  }
+
+  /* ---------- 計算 ---------- */
+  function calc(r) {
+    var bonusGames = 0;
+    if (r.mode === "jug") bonusGames = r.big * BIG_G + r.reg * REG_G;
+    var normalGames = r.games - bonusGames;
+    var coinIn = r.mode === "jug" ? normalGames * 3 + bonusGames * 2 : r.games * 3;
+    var coinOut = coinIn + r.diff;
+    return {
+      bonusGames: bonusGames,
+      normalGames: normalGames,
+      coinIn: coinIn,
+      coinOut: coinOut,
+      rate: coinIn > 0 ? (coinOut / coinIn) * 100 : 0
+    };
+  }
+
+  /* ---------- 表示用ヘルパ ---------- */
+  function n(v) { return Math.round(v).toLocaleString("ja-JP"); }
+  function signed(v) { return (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ja-JP"); }
+  function modeName(m) { return m === "jug" ? "ジャグラー" : "スマスロ"; }
+  var WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+  function pad(x) { return String(x).padStart(2, "0"); }
+  function isoOf(dateObj) {
+    return dateObj.getFullYear() + "-" + pad(dateObj.getMonth() + 1) + "-" + pad(dateObj.getDate());
+  }
+  function isoShift(days) {
+    var d = new Date();
+    d.setDate(d.getDate() + days);
+    return isoOf(d);
+  }
+  function parseISO(s) {
+    var p = String(s || "").split("-");
+    if (p.length !== 3) return null;
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  // 日付のない旧履歴は、計算した日を営業日として扱う
+  function dateOf(r) { return r.date || (r.at ? isoOf(new Date(r.at)) : ""); }
+  function fmtDate(s, withYear) {
+    var d = parseISO(s);
+    if (!d) return "";
+    return (withYear ? d.getFullYear() + "/" : "") + (d.getMonth() + 1) + "/" + d.getDate() +
+      "（" + WEEKDAYS[d.getDay()] + "）";
+  }
+  /* ---------- 履歴 ---------- */
+  var HIST_MIN = 3;          // 既定で見せる件数
+  var expanded = false;
+  var history = load(HKEY, null);
+  if (!history) {
+    history = [
+      { mode: "jug", shop: "サンプル店", machine: "マイジャグラーV", date: isoShift(-2), games: 5200, big: 28, reg: 21, diff: 1860, at: Date.now() - 7200000, sample: true },
+      { mode: "sma", shop: "サンプル店", machine: "スマスロ北斗の拳", date: isoShift(-1), games: 3100, big: 0, reg: 0, diff: -640, at: Date.now() - 3600000, sample: true }
+    ];
+  }
+
+  // 全角/半角・大文字小文字をそろえて照合する
+  function norm(s) {
+    var t = String(s || "");
+    try { t = t.normalize("NFKC"); } catch (e) { /* 未対応環境はそのまま比較 */ }
+    return t.toLowerCase();
+  }
+  // スペース区切りの語はすべて含む条件（店舗名と機種名のどちらで当たってもよい）
+  function hit(r, tokens) {
+    var hay = norm(r.shop) + " " + norm(r.machine);
+    return tokens.every(function (t) { return hay.indexOf(t) >= 0; });
+  }
+  function mark(text, tokens) {
+    var s = String(text || "");
+    if (!tokens.length) return esc(s);
+    var lower = norm(s);
+    // 正規化で文字数が変わる場合は強調せずそのまま出す
+    if (lower.length !== s.length) return esc(s);
+    var hits = [];
+    tokens.forEach(function (t) {
+      var i = 0, p;
+      while ((p = lower.indexOf(t, i)) >= 0) {
+        hits.push([p, p + t.length]);
+        i = p + t.length;
+      }
+    });
+    if (!hits.length) return esc(s);
+    hits.sort(function (a, b) { return a[0] - b[0]; });
+    var merged = [];
+    hits.forEach(function (h) {
+      var last = merged[merged.length - 1];
+      if (last && h[0] <= last[1]) { if (h[1] > last[1]) last[1] = h[1]; }
+      else merged.push([h[0], h[1]]);
+    });
+    var out = "", at = 0;
+    merged.forEach(function (m) {
+      out += esc(s.slice(at, m[0])) + "<mark>" + esc(s.slice(m[0], m[1])) + "</mark>";
+      at = m[1];
+    });
+    return out + esc(s.slice(at));
+  }
+
+  // 店舗 → 日付 → 履歴 の3段で辿る
+  var navShop = null, navDate = null;
+  function shopOf(r) { return r.shop || "店舗名なし"; }
+  // 1行が「◯台の平均」の場合は台数を掛けて合計する
+  function groupStat(entries) {
+    var coinIn = 0, coinOut = 0, diff = 0, units = 0, wins = 0, winUnits = 0;
+    entries.forEach(function (e) {
+      var c = calc(e.r), u = e.r.units || 1;
+      coinIn += c.coinIn * u;
+      coinOut += c.coinOut * u;
+      diff += e.r.diff * u;
+      units += u;
+      // 勝率は分子（勝ち台数）と分母（台数）をそれぞれ足す
+      if (typeof e.r.wins === "number") { wins += e.r.wins; winUnits += u; }
+    });
+    return {
+      count: entries.length,
+      units: units,
+      diff: diff,
+      wins: wins,
+      winUnits: winUnits,
+      rate: coinIn > 0 ? (coinOut / coinIn) * 100 : 0
+    };
+  }
+  function winRateText(stat) {
+    if (!stat.winUnits) return "";
+    return " ・ 勝率 " + stat.wins + "/" + stat.winUnits +
+      "（" + ((stat.wins / stat.winUnits) * 100).toFixed(0) + "%）";
+  }
+  function groupBy(entries, keyOf) {
+    var map = {}, order = [];
+    entries.forEach(function (e) {
+      var k = keyOf(e.r);
+      if (!(k in map)) { map[k] = []; order.push(k); }
+      map[k].push(e);
+    });
+    return order.map(function (k) { return { key: k, items: map[k], stat: groupStat(map[k]) }; });
+  }
+  function navRow(title, sub, stat, attr) {
+    if (!stat) {        // 店舗一覧は店名だけ
+      return '<li class="plain">' +
+        '<button type="button" class="hist-row nav-row" ' + attr + ">" +
+          '<span class="hr-name">' + esc(title) + "</span>" +
+          '<span class="hr-caret" aria-hidden="true">›</span>' +
+        "</button></li>";
+    }
+    return '<li class="' + (stat.rate >= 100 ? "hot" : "cool") + '">' +
+      '<button type="button" class="hist-row nav-row" ' + attr + ">" +
+        '<span class="hr-name">' + esc(title) + "</span>" +
+        '<span class="hr-sub">' + sub + "</span>" +
+        '<span class="hr-rate">' + stat.rate.toFixed(1) + "%</span>" +
+        '<span class="hr-caret" aria-hidden="true">›</span>' +
+      "</button></li>";
+  }
+
+  function renderHistory() {
+    var raw = $("q").value.trim();
+    var tokens = norm(raw).split(/[ 　]+/).filter(function (t) { return t !== ""; });
+    var searching = tokens.length > 0;
+    var all = history.map(function (r, i) { return { r: r, i: i }; });
+    // 消えた店舗・日付を選んだままにしない
+    if (navShop !== null && !all.some(function (e) { return shopOf(e.r) === navShop; })) {
+      navShop = null; navDate = null;
+    }
+    var inShop = navShop === null ? all : all.filter(function (e) { return shopOf(e.r) === navShop; });
+    if (navDate !== null && !inShop.some(function (e) { return dateOf(e.r) === navDate; })) navDate = null;
+    var inDate = navDate === null ? inShop : inShop.filter(function (e) { return dateOf(e.r) === navDate; });
+
+    var level = searching ? "rec" : navShop === null ? "shop" : navDate === null ? "date" : "rec";
+    var scope = searching ? all : inDate;
+    var found = scope.filter(function (e) { return !searching || hit(e.r, tokens); })
+      .map(function (e) { return { r: e.r, i: e.i, rate: calc(e.r).rate }; });
+    var order = $("sort").value;
+    if (order === "rate-desc") found.sort(function (a, b) { return b.rate - a.rate; });
+    else if (order === "rate-asc") found.sort(function (a, b) { return a.rate - b.rate; });
+    else if (order === "diff-desc") found.sort(function (a, b) { return b.r.diff - a.r.diff; });
+
+    $("clear-hist").hidden = history.length === 0;
+    $("clear-hist").textContent = navShop === null ? "すべて消す"
+      : navDate === null ? "この店舗を消す" : "この日を消す";
+    $("q-reset").hidden = raw === "";
+    searchBox.hidden = history.length === 0;
+    $("sort").hidden = level !== "rec";
+    listEmpty.hidden = history.length > 0;
+    $("tab-hist-count").textContent = history.length ? history.length : "";
+
+    // パンくず（1つ戻る）
+    var back = $("hist-back");
+    back.hidden = history.length === 0 || (navShop === null && !searching);
+    back.textContent = searching ? "‹ 検索をやめる"
+      : navDate === null ? "‹ すべての店舗"
+      : "‹ " + navShop;
+
+    if (level === "shop") {
+      var shops = groupBy(all, shopOf).sort(function (a, b) { return b.items.length - a.items.length; });
+      $("hist-count").textContent = shops.length + "店舗・" + history.length + "件";
+      noMatch.hidden = true;
+      $("hist-more").hidden = true;
+      list.innerHTML = shops.map(function (g) {
+        return navRow(g.key, null, null, 'data-shop="' + esc(g.key) + '"');
+      }).join("");
+      return;
+    }
+    if (level === "date") {
+      var dates = groupBy(inShop, dateOf).sort(function (a, b) { return a.key < b.key ? 1 : -1; });
+      $("hist-count").textContent = navShop + " ・ " + dates.length + "日分・" + inShop.length + "件";
+      noMatch.hidden = true;
+      $("hist-more").hidden = true;
+      list.innerHTML = dates.map(function (g) {
+        var sub = g.stat.count + "件 ・ " +
+          (g.stat.units > g.stat.count ? g.stat.units + "台 ・ " : "") + signed(g.stat.diff) + "枚" +
+          winRateText(g.stat);
+        return navRow(fmtDate(g.key) || "日付なし", sub, g.stat, 'data-date="' + esc(g.key) + '"');
+      }).join("");
+      return;
+    }
+
+    noMatch.hidden = found.length > 0;
+    noMatch.textContent = searching
+      ? "「" + raw + "」に一致する履歴はありません。店舗名と機種名はスペースで区切ってください。"
+      : "この日の履歴はまだありません。";
+    $("hist-count").textContent = searching
+      ? found.length + " / " + history.length + "件"
+      : navShop + " " + (fmtDate(navDate) || "日付なし") + " ・ " + found.length + "件";
+
+    var more = $("hist-more");
+    more.hidden = found.length <= HIST_MIN;
+    more.textContent = expanded
+      ? "最初の" + HIST_MIN + "件だけ表示する"
+      : "続きを見る（残り" + (found.length - HIST_MIN) + "件）";
+    var shown = expanded ? found : found.slice(0, HIST_MIN);
+
+    // 1行＝1件。タップで店舗名やボーナス回数などの詳細を開く
+    list.innerHTML = shown.map(function (entry) {
+      var r = entry.r, i = entry.i;
+      var c = calc(r);
+      var sub = (r.units > 1 ? r.units + "台の平均 ・ " : "") + n(r.games) + "G ・ " + signed(r.diff) + "枚";
+      if (r.mode === "jug") sub += " ・ B" + r.big + "/R" + r.reg;
+      if (typeof r.wins === "number") {
+        sub += " ・ 勝率 " + r.wins + "/" + (r.units || 1) +
+          "（" + ((r.wins / (r.units || 1)) * 100).toFixed(0) + "%）";
+      }
+      if (r.units > 1) sub += " ・ 合計" + signed(r.diff * r.units) + "枚";
+      else sub += " ・ 投入" + n(c.coinIn) + "→払出" + n(c.coinOut) + "枚";
+      return '<li class="' + (c.rate >= 100 ? "hot" : "cool") + '">' +
+        '<button type="button" class="hist-row" aria-expanded="false">' +
+          '<span class="hr-date">' + (fmtDate(dateOf(r)) || "日付なし") + "</span>" +
+          '<span class="hr-name">' + (r.machine ? mark(r.machine, tokens) : "機種名なし") + "</span>" +
+          '<span class="hr-rate">' + c.rate.toFixed(1) + "%</span>" +
+          '<span class="hr-caret" aria-hidden="true">›</span>' +
+        "</button>" +
+        '<div class="hist-detail" hidden>' +
+          '<div class="top">' +
+            '<span class="tag ' + (r.mode === "jug" ? "jug" : "sma") + '">' + modeName(r.mode) + "</span>" +
+            (r.sample ? '<span class="tag">例</span>' : "") +
+            (r.dai ? '<span class="tag">' + esc(r.dai) + "番台</span>" : "") +
+            "<span>" + (r.shop ? mark(r.shop, tokens) : "店舗名なし") + "</span>" +
+          "</div>" +
+          '<div class="sub">' + sub + "</div>" +
+          '<button type="button" class="del" data-i="' + i + '">この履歴を削除</button>' +
+        "</div>" +
+      "</li>";
+    }).join("");
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+  list.addEventListener("click", function (e) {
+    var del = e.target.closest(".del");
+    if (del) {
+      history.splice(Number(del.getAttribute("data-i")), 1);
+      save(HKEY, history);
+      renderHistory();
+      return;
+    }
+    var nav = e.target.closest(".nav-row");
+    if (nav) {
+      if (nav.getAttribute("data-shop") !== null) navShop = nav.getAttribute("data-shop");
+      else navDate = nav.getAttribute("data-date");
+      expanded = false;
+      renderHistory();
+      list.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    var row = e.target.closest(".hist-row");
+    if (row) {
+      var open = row.getAttribute("aria-expanded") === "true";
+      row.setAttribute("aria-expanded", open ? "false" : "true");
+      row.parentNode.querySelector(".hist-detail").hidden = open;
+    }
+  });
+  $("sort").addEventListener("change", renderHistory);
+  $("hist-more").addEventListener("click", function () {
+    expanded = !expanded;
+    renderHistory();
+    if (!expanded) $("hist-more").scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+  $("q").addEventListener("input", renderHistory);
+  $("q-reset").addEventListener("click", function () {
+    $("q").value = "";
+    renderHistory();
+    $("q").focus();
+  });
+  $("hist-back").addEventListener("click", function () {
+    if ($("q").value.trim()) $("q").value = "";       // 検索中は検索をやめる
+    else if (navDate !== null) navDate = null;
+    else navShop = null;
+    expanded = false;
+    renderHistory();
+  });
+  $("clear-hist").addEventListener("click", function () {
+    if (navShop === null) {
+      history = [];
+    } else {
+      // 開いている階層の分だけ消す（店舗ごと、またはその日の分）
+      history = history.filter(function (r) {
+        if (shopOf(r) !== navShop) return true;
+        return navDate !== null && dateOf(r) !== navDate;
+      });
+      if (navDate !== null) navDate = null; else navShop = null;
+    }
+    $("q").value = "";
+    save(HKEY, history);
+    renderHistory();
+  });
+
+  /* ---------- モード切替 ---------- */
+  function currentMode() {
+    return document.querySelector('input[name="mode"]:checked').value;
+  }
+  function applyMode() {
+    var m = currentMode();
+    for (var i = 0; i < jugOnly.length; i++) jugOnly[i].hidden = m !== "jug";
+    $("machine-list").innerHTML = MACHINES[m].map(function (name) {
+      return '<option value="' + esc(name) + '"></option>';
+    }).join("");
+    fMachine.placeholder = m === "jug" ? "例: マイジャグラーV" : "例: スマスロ北斗の拳";
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="mode"]'), function (el) {
+    el.addEventListener("change", function () {
+      applyMode();
+      if (parsed.rows.length) renderPreview();   // BB・RB列の扱いが変わるので貼り付け結果も引き直す
+    });
+  });
+
+  /* ---------- 入力の読み取り ---------- */
+  function num(el) {
+    var v = parseFloat(String(el.value).replace(/[^\d.+-]/g, ""));
+    return isFinite(v) ? v : 0;
+  }
+  function readForm() {
+    return {
+      mode: currentMode(),
+      shop: fShop.value.trim(),
+      machine: fMachine.value.trim(),
+      date: fDate.value,
+      games: Math.round(num(fGames)),
+      big: Math.round(num(fBig)),
+      reg: Math.round(num(fReg)),
+      diff: Math.round(num(fDiff)),
+      at: Date.now()
+    };
+  }
+  function validate(r) {
+    if (r.games < 1) return "総ゲーム数を1以上で入力してください。";
+    if (r.mode === "jug") {
+      if (r.big < 0 || r.reg < 0) return "BIG回数・REG回数は0以上で入力してください。";
+      var bonus = r.big * BIG_G + r.reg * REG_G;
+      if (bonus > r.games) {
+        return "ボーナス中G数が" + n(bonus) + "Gになり、総ゲーム数" + n(r.games) + "Gを超えています。BIG回数・REG回数を確認してください。";
+      }
+    }
+    return "";
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var r = readForm();
+    var msg = validate(r);
+    errorBox.hidden = !msg;
+    errorBox.textContent = msg;
+    if (msg) return;
+
+    history.unshift(r);
+    if (history.length > 200) history.length = 200;
+    $("q").value = "";   // 追加した1件が絞り込みで隠れないように
+    navShop = shopOf(r);
+    navDate = dateOf(r);
+    save(HKEY, history);
+    save(SKEY, r.shop);
+    saveDraft();
+    renderHistory();
+    showView("hist");          // 結果は履歴で確認する
+  });
+
+  $("clear").addEventListener("click", function () {
+    [fMachine, fGames, fBig, fReg, fDiff].forEach(function (el) { el.value = ""; });
+    dateFields.forEach(function (el) { el.value = isoShift(0); });
+    updateTailTarget();
+    saveDraft();
+    errorBox.hidden = true;
+    pristine = false;
+    note.hidden = true;
+    fGames.focus();
+  });
+
+  form.addEventListener("input", queueDraft);
+  form.addEventListener("input", function () {
+    if (!pristine) return;
+    pristine = false;
+    note.hidden = true;
+  });
+
+  /* ---------- 貼り付け取り込み ---------- */
+  var FIELDS = [
+    { key: "", label: "使わない" },
+    { key: "machine", label: "機種名" },
+    { key: "dai", label: "台番号" },
+    { key: "games", label: "G数" },
+    { key: "big", label: "BB / BIG" },
+    { key: "reg", label: "RB / REG" },
+    { key: "diff", label: "差枚数" },
+    { key: "units", label: "勝率（台数）" }
+  ];
+  // 見出し語から列の役割を推測する（確率の列は計算に使わない）
+  var HEADER_RULES = [
+    [/確率|合成|合算/, ""],
+    [/勝率|勝/, "units"],
+    [/率/, ""],
+    [/機種|機械名|台名/, "machine"],
+    [/差枚|差玉|出玉|枚数/, "diff"],
+    [/ゲーム|回転|g数|総g|^g$|スタート/, "games"],
+    [/台番|番号|^no/, "dai"],
+    [/bb|big|ビッグ|^b$/, "big"],
+    [/rb|reg|レギュラー|バケ|^r$/, "reg"]
+  ];
+  // 機種列に入っていても集計行は既定で取り込まない
+  var SUMMARY_ROW = /^(末尾|合計|平均|全体|小計|総合)/;
+  var parsed = { rows: [], header: null, width: 0, map: [], off: {} };
+  var pasteArea = $("paste"), parseError = $("parse-error"), previewNote = $("preview-note");
+
+  function splitCells(line) {
+    // 「5,200」の桁区切りカンマを先に落としてから区切り文字を判定する
+    var l = line.replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
+    if (l.indexOf("\t") >= 0) return l.split("\t");
+    if (/[ 　]{2,}/.test(l)) return l.split(/[ 　]{2,}/);
+    if (l.indexOf(",") >= 0) return l.split(",");
+    return l.split(/[ 　]+/);
+  }
+  // 「▲640」「-640」「+1,860枚」などを数値に。「1/123.4」は確率なので数値扱いしない
+  function toNum(cell) {
+    var s = norm(cell).trim();
+    if (s === "" || s.indexOf("/") >= 0) return null;
+    var neg = /^[▲△▼▽\-−ー]/.test(s) || /^\(.+\)$/.test(s);
+    var digits = s.replace(/[^0-9.]/g, "");
+    if (!/[0-9]/.test(digits)) return null;
+    var v = parseFloat(digits);
+    if (!isFinite(v)) return null;
+    return neg ? -v : v;
+  }
+  function numericCount(cells) {
+    var hit = 0;
+    cells.forEach(function (c) { if (toNum(c) !== null) hit++; });
+    return hit;
+  }
+
+  function guessMap(header, rows, width) {
+    var map = [], used = {}, i;
+    for (i = 0; i < width; i++) map.push("");
+    if (!rows.length) return map;
+    if (header) {
+      for (i = 0; i < width; i++) {
+        var h = norm(header[i] || "");
+        if (!h) continue;
+        for (var k = 0; k < HEADER_RULES.length; k++) {
+          if (HEADER_RULES[k][0].test(h)) {
+            var key = HEADER_RULES[k][1];
+            if (key && !used[key]) { map[i] = key; used[key] = true; }
+            break;
+          }
+        }
+      }
+    }
+    // 数値が入っている列だけを候補にする
+    var cols = [], textCols = [], ratioCols = [];
+    for (i = 0; i < width; i++) {
+      var vals = [], filled = 0, ratios = 0;
+      /* eslint-disable no-loop-func */
+      rows.forEach(function (r) {
+        var cell = (r[i] || "").trim();
+        if (cell !== "") filled++;
+        if (/^\d+\s*\/\s*\d+$/.test(norm(cell))) ratios++;    // 「10/10」は勝率＝台数
+        var v = toNum(r[i]);
+        if (v !== null) vals.push(v);
+      });
+      /* eslint-enable no-loop-func */
+      if (ratios / rows.length >= 0.6) { ratioCols.push(i); continue; }
+      if (vals.length / rows.length < 0.6) {
+        if (filled / rows.length >= 0.6) textCols.push(i);
+        continue;
+      }
+      var hasNeg = false, max = 0;
+      vals.forEach(function (v) { if (v < 0) hasNeg = true; if (Math.abs(v) > max) max = Math.abs(v); });
+      cols.push({ i: i, hasNeg: hasNeg, max: max });
+    }
+    // 文字が並んでいる列は機種名とみなす
+    if (!used.machine && textCols.length && map[textCols[0]] === "") {
+      map[textCols[0]] = "machine";
+      used.machine = true;
+    }
+    if (!used.units && ratioCols.length && map[ratioCols[0]] === "") {
+      map[ratioCols[0]] = "units";
+      used.units = true;
+    }
+    if (!used.games || !used.diff) {
+      // 列の並びの定石で埋める
+      var seq = cols.length >= 5 ? ["dai", "games", "big", "reg", "diff"]
+        : cols.length === 4 ? ["games", "big", "reg", "diff"]
+        : cols.length === 3 ? ["games", "big", "reg"]
+        : ["games", "diff"];
+      for (i = 0; i < cols.length && i < seq.length; i++) {
+        if (map[cols[i].i] === "" && !used[seq[i]]) { map[cols[i].i] = seq[i]; used[seq[i]] = true; }
+      }
+      // マイナスが出ている列は差枚数とみなす
+      for (i = 0; i < cols.length; i++) {
+        if (!cols[i].hasNeg) continue;
+        var at = cols[i].i;
+        if (map[at] === "diff") break;
+        var prev = map.indexOf("diff");
+        if (prev >= 0) map[prev] = map[at];
+        map[at] = "diff";
+        break;
+      }
+    }
+    return map;
+  }
+
+  function renderMap() {
+    var box = $("map");
+    box.innerHTML = "";
+    for (var i = 0; i < parsed.width; i++) {
+      var sample = (parsed.header && parsed.header[i]) || (parsed.rows[0] && parsed.rows[0][i]) || "";
+      var label = document.createElement("label");
+      var span = document.createElement("span");
+      span.className = "sample";
+      span.textContent = (i + 1) + "列目: " + (sample || "—");
+      var sel = document.createElement("select");
+      sel.setAttribute("data-i", String(i));
+      sel.setAttribute("aria-label", (i + 1) + "列目の項目");
+      FIELDS.forEach(function (f) {
+        var o = document.createElement("option");
+        o.value = f.key;
+        o.textContent = f.label;
+        sel.appendChild(o);
+      });
+      sel.value = parsed.map[i] || "";
+      sel.addEventListener("change", function (e) {
+        var idx = Number(e.target.getAttribute("data-i")), key = e.target.value;
+        if (key) {
+          parsed.map = parsed.map.map(function (k) { return k === key ? "" : k; });
+        }
+        parsed.map[idx] = key;
+        renderMap();
+        renderPreview();
+      });
+      label.appendChild(span);
+      label.appendChild(sel);
+      box.appendChild(label);
+    }
+    $("map-wrap").hidden = false;
+  }
+
+  function colIndex() {
+    var idx = {};
+    parsed.map.forEach(function (k, i) { if (k) idx[k] = i; });
+    return idx;
+  }
+  function importedRows() {
+    var mode = currentMode(), idx = colIndex();
+    return parsed.rows.map(function (r, i) {
+      function get(key) {
+        if (idx[key] === undefined) return 0;
+        var v = toNum(r[idx[key]]);
+        return v === null ? 0 : v;
+      }
+      function text(key) {
+        return idx[key] === undefined ? "" : String(r[idx[key]] || "").trim();
+      }
+      // 勝率「10/10」の分母は台数。平均の行が何台分かを持たせる
+      var units = 1, wins = null;
+      if (idx.units !== undefined) {
+        var m = norm(r[idx.units] || "").match(/(\d+)\s*\/\s*(\d+)/);
+        if (m) { wins = Number(m[1]); units = Math.max(1, Number(m[2])); }
+      }
+      var rec = {
+        i: i,
+        machine: text("machine"),
+        dai: text("dai"),
+        games: Math.round(get("games")),
+        big: Math.round(get("big")),
+        reg: Math.round(get("reg")),
+        diff: Math.round(get("diff")),
+        units: units,
+        wins: wins
+      };
+      rec.ok = rec.games >= 1 && rec.big >= 0 && rec.reg >= 0 &&
+        (mode !== "jug" || rec.big * BIG_G + rec.reg * REG_G <= rec.games);
+      // 「末尾0」などの集計行は既定で外す
+      if (parsed.off[i] === undefined) parsed.off[i] = SUMMARY_ROW.test(rec.machine);
+      rec.use = rec.ok && !parsed.off[i];
+      return rec;
+    });
+  }
+  function usedRows() {
+    return importedRows().filter(function (r) { return r.use; });
+  }
+  // 平均の行は台数を掛けてから合計する（1台あたりの平均を足しても店の合計にはならない）
+  function sumOf(rows) {
+    return rows.reduce(function (a, r) {
+      var u = r.units || 1;
+      return {
+        games: a.games + r.games * u,
+        big: a.big + r.big * u,
+        reg: a.reg + r.reg * u,
+        diff: a.diff + r.diff * u,
+        units: a.units + u
+      };
+    }, { games: 0, big: 0, reg: 0, diff: 0, units: 0 });
+  }
+
+  function failParse(msg) {
+    parseError.hidden = false;
+    parseError.textContent = msg;
+    $("map-wrap").hidden = true;
+    $("preview-wrap").hidden = true;
+  }
+
+  function renderPreview() {
+    var mode = currentMode(), idx = colIndex();
+    if (idx.games === undefined) {
+      return failParse("G数の列が決まっていません。列の対応で「G数」を選んでください。");
+    }
+    parseError.hidden = true;
+    var scroller = $("preview").parentNode;
+    var keepScroll = scroller.scrollTop;
+    var jug = mode === "jug";
+    var showBonus = jug && (idx.big !== undefined || idx.reg !== undefined);
+    var rows = importedRows();
+    var chosen = rows.filter(function (r) { return r.use; });
+
+    var head = ['<th class="chk"><input type="checkbox" id="chk-all" aria-label="すべて選択"' +
+      (chosen.length === rows.filter(function (r) { return r.ok; }).length ? " checked" : "") + "></th>"];
+    if (idx.machine !== undefined) head.push("<th>機種</th>");
+    if (idx.dai !== undefined) head.push("<th>台番</th>");
+    if (idx.units !== undefined) head.push("<th>台数</th>");
+    head.push("<th>G数</th>");
+    if (showBonus) head.push("<th>BB</th><th>RB</th>");
+    head.push("<th>差枚</th><th>機械割</th>");
+
+    var html = "<thead><tr>" + head.join("") + "</tr></thead><tbody>";
+    rows.forEach(function (r) {
+      var c = calc({ mode: mode, games: r.games, big: r.big, reg: r.reg, diff: r.diff });
+      var cells = [];
+      if (idx.machine !== undefined) cells.push('<td class="name-cell">' + esc(r.machine || "—") + "</td>");
+      if (idx.dai !== undefined) cells.push("<td>" + esc(r.dai || "—") + "</td>");
+      if (idx.units !== undefined) cells.push("<td>" + r.units + "</td>");
+      cells.push("<td>" + n(r.games) + "</td>");
+      if (showBonus) cells.push("<td>" + r.big + "</td><td>" + r.reg + "</td>");
+      cells.push("<td>" + signed(r.diff) + "</td>");
+      cells.push(r.ok
+        ? '<td class="' + (c.rate >= 100 ? "hot" : "cool") + '">' + c.rate.toFixed(1) + "%</td>"
+        : "<td>—</td>");
+      html += '<tr class="' + (r.ok ? (r.use ? "" : "off") : "bad") + '">' +
+        '<td class="chk"><input type="checkbox" class="row-chk" data-i="' + r.i + '"' +
+        (r.use ? " checked" : "") + (r.ok ? "" : " disabled") + ' aria-label="この行を取り込む"></td>' +
+        cells.join("") + "</tr>";
+    });
+    if (chosen.length > 1) {
+      var t = sumOf(chosen);
+      var tc = calc({ mode: mode, games: t.games, big: t.big, reg: t.reg, diff: t.diff });
+      var tcells = ['<td class="chk"></td>'];
+      if (idx.machine !== undefined) tcells.push("<td>選択 " + chosen.length + "件の合計</td>");
+      if (idx.dai !== undefined) tcells.push("<td>—</td>");
+      if (idx.units !== undefined) tcells.push("<td>" + t.units + "</td>");
+      tcells.push("<td>" + n(t.games) + "</td>");
+      if (showBonus) tcells.push("<td>" + t.big + "</td><td>" + t.reg + "</td>");
+      tcells.push("<td>" + signed(t.diff) + "</td>");
+      tcells.push('<td class="' + (tc.rate >= 100 ? "hot" : "cool") + '">' + tc.rate.toFixed(1) + "%</td>");
+      html += '<tr class="total">' + tcells.join("") + "</tr>";
+    }
+    html += "</tbody>";
+    $("preview").innerHTML = html;
+    scroller.scrollTop = keepScroll;
+
+    var bad = rows.filter(function (r) { return !r.ok; }).length;
+    var msgs = [chosen.length + "件を選択中（全" + rows.length + "行）。"];
+    if (bad > 0) msgs.push(bad + "行はG数が読めないか数値が合わないため選べません。");
+    if (idx.machine !== undefined) msgs.push("機種名は表の列から取り込みます。");
+    if (idx.units !== undefined) msgs.push("勝率の分母を台数として読み、合計は「1台あたりの平均×台数」で出しています。");
+    if (jug && !showBonus) msgs.push("BB・RBの列がないので全ゲームを3枚掛けで概算します（実際の機械割との差は0.1〜0.3%程度です）。");
+    if (!jug && (idx.big !== undefined || idx.reg !== undefined)) msgs.push("スマスロモードではBB・RBは計算に使いません。");
+    previewNote.textContent = msgs.join("");
+    $("apply-total").disabled = chosen.length === 0;
+    $("add-rows").disabled = chosen.length === 0;
+    $("preview-wrap").hidden = false;
+  }
+
+  $("preview").addEventListener("change", function (e) {
+    var t = e.target;
+    if (t.id === "chk-all") {
+      importedRows().forEach(function (r) { if (r.ok) parsed.off[r.i] = !t.checked; });
+      renderPreview();
+      return;
+    }
+    if (t.classList.contains("row-chk")) {
+      parsed.off[Number(t.getAttribute("data-i"))] = !t.checked;
+      renderPreview();
+    }
+  });
+
+  function parsePaste() {
+    var lines = pasteArea.value.split(/\r?\n/).map(function (l) { return l.trim(); })
+      .filter(function (l) { return l !== ""; });
+    if (lines.length === 0) return failParse("貼り付けた内容が空です。表を選択してコピーし直してください。");
+    var grid = lines.map(function (l) {
+      return splitCells(l).map(function (c) { return c.trim(); });
+    });
+    var width = 0;
+    grid.forEach(function (cells) { if (cells.length > width) width = cells.length; });
+    if (width < 2) {
+      return failParse("列に分けられませんでした。表をそのままコピーするか、タブ・カンマ・スペース区切りで貼り付けてください。");
+    }
+    var header = null;
+    if (grid.length > 1 && numericCount(grid[0]) <= 1) header = grid.shift();
+    var rows = grid.filter(function (cells) { return numericCount(cells) >= 2; });
+    if (rows.length === 0) {
+      return failParse("数値の行が見つかりませんでした。見出しだけでなく台データの行も含めてコピーしてください。");
+    }
+    parsed = { rows: rows, header: header, width: width, map: guessMap(header, rows, width), off: {} };
+    renderMap();
+    renderPreview();
+  }
+
+  // 店舗名と日付はフォーム・取り込み・末尾の3か所で同じ値を指す
+  var shopFields = [fShop, $("import-shop"), $("tail-shop")];
+  var dateFields = [fDate, $("import-date"), $("tail-date")];
+  function syncGroup(group) {
+    group.forEach(function (el) {
+      el.addEventListener("input", function () {
+        group.forEach(function (other) { if (other !== el) other.value = el.value; });
+        if (pristine) { pristine = false; note.hidden = true; }
+        updateTailTarget();
+        queueDraft();
+      });
+    });
+  }
+  function setShopDate(shop, date) {
+    shopFields.forEach(function (el) { el.value = shop; });
+    dateFields.forEach(function (el) { el.value = date; });
+    updateTailTarget();
+  }
+  syncGroup(shopFields);
+  syncGroup(dateFields);
+
+  $("parse").addEventListener("click", parsePaste);
+  pasteArea.addEventListener("paste", function () { setTimeout(parsePaste, 0); });
+  $("paste-clear").addEventListener("click", function () {
+    pasteArea.value = "";
+    saveDraft();
+    parsed = { rows: [], header: null, width: 0, map: [], off: {} };
+    parseError.hidden = true;
+    $("map-wrap").hidden = true;
+    $("preview-wrap").hidden = true;
+    pasteArea.focus();
+  });
+  $("apply-total").addEventListener("click", function () {
+    var rows = usedRows();
+    if (rows.length === 0) return;
+    var t = sumOf(rows);
+    if (rows.length === 1 && rows[0].machine) fMachine.value = rows[0].machine;
+    fGames.value = t.games;
+    fBig.value = t.big;
+    fReg.value = t.reg;
+    fDiff.value = t.diff;
+    saveDraft();
+    pristine = false;
+    note.hidden = true;
+    errorBox.hidden = true;
+    previewNote.textContent = "選択した" + rows.length + "件の合計を上のフォームに入れました。「計算する」で履歴に残せます。";
+    form.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  $("add-rows").addEventListener("click", function () {
+    var base = readForm();
+    var rows = usedRows();
+    if (rows.length === 0) return;
+    var added = 0, updated = 0;
+    rows.slice().reverse().forEach(function (r) {
+      var rec = {
+        mode: base.mode, shop: base.shop, machine: r.machine || base.machine, date: base.date,
+        dai: r.dai, games: r.games, big: r.big, reg: r.reg, diff: r.diff,
+        units: r.units > 1 ? r.units : undefined, wins: r.wins,
+        at: Date.now()
+      };
+      // 同じ店・同じ日・同じ機種（台番）は上書きする（貼り直しても二重にならない）
+      var at = -1;
+      for (var i = 0; i < history.length; i++) {
+        var h = history[i];
+        if (h.shop === rec.shop && dateOf(h) === rec.date &&
+            (h.machine || "") === (rec.machine || "") && (h.dai || "") === (rec.dai || "")) {
+          at = i;
+          break;
+        }
+      }
+      if (at >= 0) { history[at] = rec; updated++; }
+      else { history.unshift(rec); added++; }
+    });
+    if (history.length > 200) history.length = 200;
+    $("q").value = "";
+    navShop = shopOf(base);
+    navDate = dateOf(base);
+    save(HKEY, history);
+    save(SKEY, base.shop);
+    renderHistory();
+    previewNote.textContent = (added ? added + "件を追加" : "") + (added && updated ? "、" : "") +
+      (updated ? updated + "件を上書き" : "") + "しました（同じ店・同じ日・同じ機種は貼り直すと上書きされます）。";
+    showView("hist");
+  });
+
+  /* ---------- 末尾別の傾向 ---------- */
+  var TKEY = "kikaiwari.tails.v1";
+  var THIN = 10;             // 台数がこれ未満の末尾は参考値として薄く出す
+  var tails = load(TKEY, null);
+  if (!tails) {
+    tails = [{
+      shop: "サンプル店", date: isoShift(-1), at: Date.now(), sample: true,
+      rows: [
+        { label: "末尾0", diff: -39, games: 4331, wins: 15, total: 34 },
+        { label: "末尾1", diff: -883, games: 3665, wins: 9, total: 35 },
+        { label: "末尾2", diff: -165, games: 3934, wins: 15, total: 35 },
+        { label: "末尾3", diff: 266, games: 3538, wins: 15, total: 36 },
+        { label: "末尾4", diff: 39, games: 3557, wins: 15, total: 35 },
+        { label: "末尾5", diff: 226, games: 3181, wins: 17, total: 35 },
+        { label: "末尾6", diff: 134, games: 3459, wins: 19, total: 34 },
+        { label: "末尾7", diff: 392, games: 4114, wins: 15, total: 34 },
+        { label: "末尾8", diff: -899, games: 3299, wins: 9, total: 33 },
+        { label: "末尾9", diff: -148, games: 3840, wins: 14, total: 33 },
+        { label: "ゾロ目", diff: 122, games: 4180, wins: 15, total: 32 }
+      ]
+    }];
+  }
+  var tailAt = 0;
+
+  function tailKey(s) { return s.shop + "|" + s.date; }
+  function tailLabel(raw) {
+    var s = String(raw || "").trim();
+    if (/ゾロ/.test(s)) return "ゾロ目";
+    var m = norm(s).match(/(\d)/);
+    return m ? "末尾" + m[1] : (s || "—");
+  }
+
+  function parseTails(text) {
+    var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); })
+      .filter(function (l) { return l !== ""; });
+    if (!lines.length) return [];
+    var grid = lines.map(function (l) {
+      return splitCells(l).map(function (c) { return c.trim(); });
+    });
+    var idx = { label: 0, diff: 1, games: 2, rate: 3 };
+    if (grid.length > 1 && numericCount(grid[0]) <= 1) {
+      grid[0].forEach(function (h, i) {
+        var t = norm(h);
+        if (/末尾|番号/.test(t)) idx.label = i;
+        else if (/差枚|差玉|出玉/.test(t)) idx.diff = i;
+        else if (/ゲーム|g数|回転/.test(t)) idx.games = i;
+        else if (/勝/.test(t)) idx.rate = i;
+      });
+    }
+    var body = grid.filter(function (c) { return numericCount(c) >= 2; });
+    // ページ全体を貼られても末尾の行だけ拾う
+    var only = body.filter(function (c) { return /末尾|ゾロ/.test(c[idx.label] || c[0] || ""); });
+    if (only.length) body = only;
+    var rows = [];
+    body.forEach(function (c) {
+      var games = toNum(c[idx.games]), diff = toNum(c[idx.diff]);
+      if (games === null || diff === null || games < 1) return;
+      var wins = null, total = null;
+      var m = norm(c[idx.rate] || "").match(/(\d+)\s*\/\s*(\d+)/);
+      if (m) { wins = Number(m[1]); total = Number(m[2]); }
+      rows.push({
+        label: tailLabel(c[idx.label]),
+        diff: Math.round(diff),
+        games: Math.round(games),
+        wins: wins,
+        total: total
+      });
+    });
+    return rows;
+  }
+
+  function updateTailTarget() {
+    $("tail-target").textContent = (fShop.value.trim() || "店舗名未入力") + " ・ " +
+      (fmtDate(fDate.value) || "日付未設定") + " で保存";
+  }
+
+  var ctlRow = $("tail-ctl");
+
+  function renderTails() {
+    var pick = $("tail-pick"), tlist = $("tail-list");
+    updateTailTarget();
+    pick.innerHTML = tails.map(function (s, i) {
+      return '<option value="' + i + '"' + (i === tailAt ? " selected" : "") + ">" +
+        esc((s.shop || "店舗名なし") + " " + (fmtDate(s.date) || "日付なし") + (s.sample ? "（例）" : "")) +
+        "</option>";
+    }).join("");
+    ctlRow.hidden = tails.length === 0;
+    $("tail-clear").hidden = tails.length === 0;
+    $("tail-rename").hidden = tails.length === 0;
+    $("tail-count").textContent = tails.length > 1 ? tails.length + "件" : "";
+    if (!tails.length) {
+      tlist.innerHTML = "";
+      $("tail-empty").hidden = false;
+      $("tail-total").hidden = true;
+      $("tail-note").hidden = true;
+      return;
+    }
+    $("tail-empty").hidden = true;
+    if (tailAt > tails.length - 1) tailAt = tails.length - 1;
+    var rows = tails[tailAt].rows.slice().sort(function (a, b) { return b.diff - a.diff; });
+    var scale = 500;
+    rows.forEach(function (r) { if (Math.abs(r.diff) > scale) scale = Math.abs(r.diff); });
+
+    var thinCount = 0;
+    tlist.innerHTML = rows.map(function (r) {
+      var half = (Math.abs(r.diff) / scale) * 50;             // 左右いっぱいが ±最大差枚
+      var style = r.diff >= 0
+        ? "left:50%;width:" + half.toFixed(1) + "%"
+        : "left:" + (50 - half).toFixed(1) + "%;width:" + half.toFixed(1) + "%";
+      var thin = r.total !== null && r.total < THIN;
+      if (thin) thinCount++;
+      var sub = n(r.games) + "G" +
+        (r.total ? " ・ 勝率 " + (r.wins === null ? "—" : r.wins + "/" + r.total + "台（" +
+          ((r.wins / r.total) * 100).toFixed(0) + "%）") : "");
+      return '<li class="tail-row ' + (r.diff >= 0 ? "plus" : "minus") + (thin ? " thin" : "") + '">' +
+        '<span class="tail-label">' + esc(r.label) + "</span>" +
+        '<span class="tail-bar"><span class="tail-fill" style="' + style + '"></span><span class="tail-zero"></span></span>' +
+        '<span class="tail-rate">' + signed(r.diff) + "</span>" +
+        '<span class="tail-sub">' + sub + "</span>" +
+        "</li>";
+    }).join("");
+
+    // ゾロ目は末尾1・2…と重複するので合算から外す
+    var base = rows.filter(function (r) { return r.label !== "ゾロ目" && r.total; });
+    if (base.length >= 5) {
+      var units = 0, totalDiff = 0, wins = 0, hasWins = true;
+      base.forEach(function (r) {
+        units += r.total;
+        totalDiff += r.diff * r.total;
+        if (r.wins === null) hasWins = false; else wins += r.wins;
+      });
+      $("tail-total").hidden = false;
+      $("tail-total").innerHTML = "末尾0〜9の平均差枚: <b>" + signed(Math.round(totalDiff / units)) +
+        "枚</b>（" + units + "台" + (hasWins ? "・勝率 " + wins + "/" + units + "＝" +
+        ((wins / units) * 100).toFixed(0) + "%" : "") + "）";
+    } else {
+      $("tail-total").hidden = true;
+    }
+    $("tail-note").hidden = false;
+    $("tail-note").textContent = "差枚・G数は1台あたりの平均、台数は勝率の分母です。バーは左右いっぱいがこの日の最大差枚（±" +
+      n(scale) + "枚）。" +
+      (thinCount ? "台数が" + THIN + "台未満の末尾は参考値として薄く表示しています。" : "") +
+      "ゾロ目は末尾1・2…と重複するため合算には含めていません。";
+  }
+
+  $("tail-read").addEventListener("click", function () {
+    var rows = parseTails($("tail-paste").value);
+    if (!rows.length) {
+      $("tail-error").hidden = false;
+      $("tail-error").textContent = "末尾別の行が読み取れませんでした。「末尾番号／平均差枚／平均G数／勝率」の表をコピーして貼り付けてください。";
+      return;
+    }
+    $("tail-error").hidden = true;
+    $("tail-msg").hidden = true;
+    var set = { shop: fShop.value.trim(), date: fDate.value, at: Date.now(), rows: rows };
+    for (var i = 0; i < tails.length; i++) {
+      if (tailKey(tails[i]) === tailKey(set)) { tails.splice(i, 1); break; }   // 同じ店・同じ日は上書き
+    }
+    tails.unshift(set);
+    if (tails.length > 20) tails.length = 20;
+    tailAt = 0;
+    save(TKEY, tails);
+    $("tail-paste").value = "";
+    saveDraft();
+    $("tail-import").open = false;
+    renderTails();
+  });
+  $("tail-pick").addEventListener("change", function (e) {
+    tailAt = Number(e.target.value);
+    // 選んだセットの店舗名・日付を各欄に反映して、そのまま直せるようにする
+    var set = tails[tailAt];
+    if (set) setShopDate(set.shop || "", set.date || "");
+    renderTails();
+  });
+  $("tail-rename").addEventListener("click", function () {
+    var set = tails[tailAt];
+    if (!set) return;
+    var shop = fShop.value.trim(), date = fDate.value;
+    set.shop = shop;
+    set.date = date;
+    delete set.sample;
+    for (var i = tails.length - 1; i >= 0; i--) {
+      if (i !== tailAt && tailKey(tails[i]) === tailKey(set)) {   // 同じ店・同じ日が二重にならないようにする
+        tails.splice(i, 1);
+        if (i < tailAt) tailAt--;
+      }
+    }
+    save(TKEY, tails);
+    renderTails();
+    $("tail-msg").hidden = false;
+    $("tail-msg").textContent = "表示中のデータを「" + (shop || "店舗名なし") + " " +
+      (fmtDate(date) || "日付なし") + "」に直しました。";
+  });
+  $("tail-del").addEventListener("click", function () {
+    if (!tails.length) return;
+    tails.splice(tailAt, 1);
+    tailAt = 0;
+    save(TKEY, tails);
+    $("tail-msg").hidden = true;
+    renderTails();
+  });
+  $("tail-clear").addEventListener("click", function () {
+    tails = [];
+    tailAt = 0;
+    save(TKEY, tails);
+    $("tail-msg").hidden = true;
+    $("tail-error").hidden = true;
+    renderTails();
+  });
+  /* ---------- 画面タブ ---------- */
+  var VKEY = "kikaiwari.view.v1";
+  var VIEWS = ["calc", "tails", "hist"];
+  function showView(name) {
+    if (VIEWS.indexOf(name) < 0) name = "calc";
+    VIEWS.forEach(function (v) {
+      $("view-" + v).hidden = v !== name;
+      $("tab-" + v).setAttribute("aria-selected", v === name ? "true" : "false");
+    });
+    save(VKEY, name);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  VIEWS.forEach(function (v) {
+    $("tab-" + v).addEventListener("click", function () { showView(v); });
+  });
+
+  /* ---------- 入力中の内容を保つ ---------- */
+  var draftTimer = null;
+  function saveDraft() {
+    save(DKEY, {
+      mode: currentMode(),
+      shop: fShop.value, machine: fMachine.value, date: fDate.value,
+      games: fGames.value, big: fBig.value, reg: fReg.value, diff: fDiff.value,
+      paste: pasteArea.value, tailPaste: $("tail-paste").value
+    });
+  }
+  function queueDraft() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveDraft, 400);
+  }
+  pasteArea.addEventListener("input", queueDraft);
+  $("tail-paste").addEventListener("input", queueDraft);
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="mode"]'), function (el) {
+    el.addEventListener("change", saveDraft);
+  });
+
+  /* ---------- 初期表示 ---------- */
+  var draft = load(DKEY, null);
+  if (draft && draft.mode === "jug") $("mode-jug").checked = true;
+  applyMode();
+  if (draft) {
+    // 前に入れた内容をそのまま戻す（サンプルでは上書きしない）
+    setShopDate(draft.shop || "", draft.date || isoShift(0));
+    fMachine.value = draft.machine || "";
+    fGames.value = draft.games || "";
+    fBig.value = draft.big || "";
+    fReg.value = draft.reg || "";
+    fDiff.value = draft.diff || "";
+    pristine = false;
+    note.hidden = true;
+    if (draft.tailPaste) $("tail-paste").value = draft.tailPaste;
+    if (draft.paste) {
+      pasteArea.value = draft.paste;
+      $("import").open = true;
+      parsePaste();
+    }
+  } else {
+    var savedShop = load(SKEY, "");
+    var seed = { mode: "sma", shop: savedShop || "サンプル店", machine: "スマスロ北斗の拳", date: isoShift(0), games: 3100, diff: -640 };
+    setShopDate(seed.shop, seed.date);
+    fMachine.value = seed.machine;
+    fGames.value = seed.games;
+    fDiff.value = seed.diff;
+  }
+  renderHistory();
+  renderTails();
+  showView(load(VKEY, "calc"));
+})();
+</script>
